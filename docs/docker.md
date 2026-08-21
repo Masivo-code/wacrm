@@ -53,6 +53,51 @@ docker build \
 docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
 ```
 
+## Deploying on EasyPanel
+
+EasyPanel builds directly from the `Dockerfile` (it doesn't read
+`docker-compose.yml`), so the build-arg / env-var split above applies
+the same way, just entered through its UI instead of `--build-arg` /
+`--env-file`:
+
+1. **Create App → Source: Git repo**, pointing at this repository.
+   Build method: **Dockerfile** (leave the path as `Dockerfile`).
+2. **Build Args** — add the `NEXT_PUBLIC_*` values, since they get
+   baked into the client bundle at build time:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_SITE_URL` (your EasyPanel domain, e.g. `https://crm.example.com`)
+   - `NEXT_PUBLIC_APP_LOCALE` (optional, defaults to `en`)
+3. **Environment Variables** — add the runtime-only secrets (never
+   put these in Build Args, or they'd leak into the client bundle):
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `ENCRYPTION_KEY`
+   - `META_APP_SECRET`
+   - any optional vars you need from `.env.local.example`
+     (`AUTOMATION_CRON_SECRET`, `META_APP_ID`, …)
+4. **Port**: the container listens on `3000` — EasyPanel picks this
+   up from the Dockerfile's `EXPOSE 3000`, but confirm it in the
+   service's Domain settings if it doesn't auto-detect.
+5. Changing a `NEXT_PUBLIC_*` build arg requires a rebuild; changing
+   a runtime env var only needs a restart — same rule as plain
+   Docker above.
+6. Point your WhatsApp webhook and (if used) an external scheduler
+   for `/api/automations/cron` / `/api/flows/cron` at the domain
+   EasyPanel assigns.
+
+If you put `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+under Environment instead of Build Args, the build **stops with an
+error** naming the two variables. That is deliberate: those values are
+inlined into the client bundle, so supplying them at runtime is too
+late — the image would build cleanly and then fail only in the
+browser.
+
+The image also declares a `HEALTHCHECK`, which EasyPanel uses to decide
+whether a deploy came up. It probes the port the server is actually
+listening on (`PORT`, default `3000`), so overriding `PORT` in
+Environment stays consistent — just make sure EasyPanel's Domain
+settings point at the same port.
+
 ## Notes
 
 - Database migrations under `supabase/` are **not** run by the
